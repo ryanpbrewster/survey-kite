@@ -11,7 +11,8 @@ import "./App.css";
 import firebase from 'firebase/app';
 import 'firebase/auth';
 import 'firebase/firestore';
-import { Survey as SurveyModel, Question as QuestionModel, Checkbox as CheckboxModel, Radio as RadioModel } from "./models";
+import { Survey as SurveyModel, Question as QuestionModel} from "./models";
+import styled from 'styled-components';
 
 firebase.initializeApp({
   apiKey: "AIzaSyAWka-tQokMN31ouNWCNY8F4ihl1seqJUE",
@@ -58,8 +59,15 @@ const TakeSurveyPage: React.FC = () => {
   const questions = survey.questions.map((question, idx) => {
     return <Question {...question} />
   });
-  return <div>{questions}</div>;
+  return <SurveyWrapper>{questions}</SurveyWrapper>;
 };
+const SurveyWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  padding: 24px;
+`;
 
 const Question: React.FC<QuestionModel> = ({description, answers}) => {
   let content;
@@ -71,11 +79,16 @@ const Question: React.FC<QuestionModel> = ({description, answers}) => {
       content = <RadioButton choices={answers.choices} />;
       break;
   }
-  return <div>
+  return <QuestionWrapper>
     <p>{description}</p>
     {content}
-  </div>
+  </QuestionWrapper>
 };
+const QuestionWrapper = styled.div`
+  width: 50%;
+  padding: 8px;
+  box-shadow: 2px 2px 4px 2px;
+`;
 
 interface CheckboxesProps {
   readonly choices: string[];
@@ -95,13 +108,18 @@ interface RadioButtonProps {
 }
 const RadioButton: React.FC<RadioButtonProps> = ({choices}) => {
   const items = choices.map((choice, idx) => {
-    return <div>
+    return <RadioItemWrapper>
       <input type="radio" />
       <p>{choice}</p>
-    </div>;
+    </RadioItemWrapper>;
   });
   return <>{items}</>;
 };
+const RadioItemWrapper = styled.div`
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+`;
 
 function useAuth(): string | undefined {
   const [user, setUser] = useState<string | undefined>(undefined);
