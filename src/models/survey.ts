@@ -4,17 +4,17 @@ export interface Survey {
 
 export interface Question {
     readonly description: string;
-    readonly answers: Answers;
+    readonly choices: Choices;
 }
 
-export type Answers = Radio | Checkbox;
+export type Choices = Radio | Checkbox;
 
 export interface Radio {
     readonly type: 'radio';
-    readonly choices: string[];
+    readonly items: string[];
 }
 
 export interface Checkbox {
     readonly type: 'checkbox';
-    readonly choices: string[];
+    readonly items: string[];
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BrowserRouter as Router,
   Switch,
@@ -11,7 +11,8 @@ import "./App.css";
 import firebase from 'firebase/app';
 import 'firebase/auth';
 import 'firebase/firestore';
-import { Survey as SurveyModel, Question as QuestionModel} from "./models";
+import { Survey as SurveyModel, Choices as ChoicesModel} from "./models/survey";
+import { Response as ResponseModel, Answer as AnswerModel} from "./models/response";
 import styled from 'styled-components';
 
 firebase.initializeApp({
@@ -21,14 +22,15 @@ firebase.initializeApp({
 });
 
 const App: React.FC = () => {
+  const uid = useAuth();
   return (
     <Router>
       <Switch>
         <Route path="/take/:surveyId">
-          <TakeSurveyPage />
+          {uid ? <TakeSurveyPage uid={uid} /> : <Login />}
         </Route>
         <Route path="/edit">
-          <EditPage />
+          {uid ? <EditPage uid={uid} /> : <Login />}
         </Route>
         <Route>
           <Redirect to="/edit" />
@@ -38,26 +40,42 @@ const App: React.FC = () => {
   );
 };
 
-const EditPage: React.FC = () => {
-  const uid = useAuth();
-  if (!uid) {
-    return <Login />
-  }
+interface AuthedProps {
+  readonly uid: string;
+}
+const EditPage: React.FC<AuthedProps> = ({uid}) => {
   return <p>Time to edit a survey!</p>;
 };
 
-const TakeSurveyPage: React.FC = () => {
+const TakeSurveyPage: React.FC<AuthedProps> = ({uid}) => {
   const { surveyId } = useParams();
   const survey = useSurvey(surveyId);
-  console.log(survey);
+  const [response, updateResponse] = useResponse(surveyId, uid);
+  useEffect(() => {
+    if (survey && response === null) {
+      updateResponse({
+        answers: survey.questions.map(() => null),
+      });
+    }
+  }, [survey, response, updateResponse])
+
   if (survey === undefined) {
     return <Loading />;
   }
   if (survey === null) {
     return <Redirect to="/" />;
   }
+  if (!response) {
+    return <Loading />;
+  }
   const questions = survey.questions.map((question, idx) => {
-    return <Question {...question} />
+    return <Question key={idx} description={question.description} answer={response.answers[idx]} choices={question.choices}
+    
+    onAnswer={(answer) => {
+      response.answers[idx] = answer;
+      updateResponse(response)
+    }}
+    />
   });
   return <SurveyWrapper>{questions}</SurveyWrapper>;
 };
@@ -69,15 +87,25 @@ const SurveyWrapper = styled.div`
   padding: 24px;
 `;
 
-const Question: React.FC<QuestionModel> = ({description, answers}) => {
+interface QuestionProps {
+  readonly description: string;
+  readonly choices: ChoicesModel;
+  readonly answer: AnswerModel | null;
+  readonly onAnswer: (answer: AnswerModel | null) => void;
+}
+const Question: React.FC<QuestionProps> = ({description, choices, answer, onAnswer}) => {
   let content;
-  switch (answers.type) {
-    case 'checkbox':
-      content = <Checkboxes choices={answers.choices} />;
+  switch (choices.type) {
+    case 'checkbox': {
+      const selected = answer?.type === 'checkbox' ? answer.items : undefined;
+      content = <Checkboxes items={choices.items} selected={selected ?? []} onSelect={(items) => onAnswer({type:"checkbox", items})}/>;
       break;
-    case 'radio':
-      content = <RadioButton choices={answers.choices} />;
+    }
+    case 'radio': {
+      const selected = answer?.type === 'radio' ? answer.item : undefined;
+      content = <RadioButton items={choices.items} selected={selected} onSelect={(item) => onAnswer({type:"radio", item})}/>;
       break;
+    }
   }
   return <QuestionWrapper>
     <p>{description}</p>
@@ -91,16 +119,19 @@ const QuestionWrapper = styled.div`
 `;
 
 interface CheckboxesProps {
-  readonly choices: string[];
+  readonly items: string[];
+  readonly selected: string[];
+  readonly onSelect: (items: string[]) => void;
 }
-const Checkboxes: React.FC<CheckboxesProps> = ({choices}) => {
-  const items = choices.map((choice, idx) => {
-    return <CheckboxItemWrapper>
-      <input type="checkbox" />
-      <p>{choice}</p>
+const Checkboxes: React.FC<CheckboxesProps> = ({items, selected, onSelect}) => {
+  const content = items.map((item, idx) => {
+    const checked = selected.includes(item);
+    return <CheckboxItemWrapper key={idx} onClick={() => onSelect(checked ? selected.filter((v) => v !== item) : [...selected, item])}>
+      <input type="checkbox" checked={checked} />
+      <p>{item}</p>
     </CheckboxItemWrapper>;
   });
-  return <>{items}</>;
+  return <>{content}</>;
 };
 const CheckboxItemWrapper = styled.div`
   display: flex;
@@ -114,16 +145,18 @@ const CheckboxItemWrapper = styled.div`
 `;
 
 interface RadioButtonProps {
-  readonly choices: string[];
+  readonly items: string[];
+  readonly selected?: string;
+  readonly onSelect: (item: string) => void;
 }
-const RadioButton: React.FC<RadioButtonProps> = ({choices}) => {
-  const items = choices.map((choice, idx) => {
-    return <RadioItemWrapper>
-      <input type="radio" />
-      <p>{choice}</p>
+const RadioButton: React.FC<RadioButtonProps> = ({items, selected, onSelect}) => {
+  const content = items.map((item, idx) => {
+    return <RadioItemWrapper key={idx} onClick={() => onSelect(item)}>
+      <input type="radio" checked={item === selected} />
+      <p>{item}</p>
     </RadioItemWrapper>;
   });
-  return <>{items}</>;
+  return <>{content}</>;
 };
 const RadioItemWrapper = styled.div`
   display: flex;
@@ -159,6 +192,26 @@ function useSurvey(surveyId: string): SurveyModel | null | undefined {
     };
   }, [db, surveyId]);
   return survey;
+}
+
+function useResponse(surveyId: string, uid: string): [ResponseModel | null | undefined, (update: ResponseModel) => void] {
+  const [response, setResponse] = useState<ResponseModel | null | undefined>(undefined);
+  const doc = useMemo(() => firebase.firestore().collection("surveys").doc(surveyId).collection("responses").doc(uid), [surveyId, uid]);
+  useEffect(() => {
+    console.log(`subscribing to surveys/${surveyId}/responses/${uid}`);
+    const unsub = doc.onSnapshot(snap =>  {
+      setResponse(snap.exists ? snap.data() as ResponseModel : null);
+    });
+    return () => {
+      console.log(`unsubscribing from surveys/${surveyId}/responses/${uid}`);
+      unsub();
+    };
+  }, [doc, surveyId, uid]);
+  const updateResponse = useCallback((update) => {
+    console.log("updating response to ", update);
+    doc.set(update, {merge: true});
+  }, [doc]);
+  return [response, updateResponse];
 }
 
 const Login: React.FC = () => {
