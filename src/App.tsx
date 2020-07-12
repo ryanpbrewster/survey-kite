@@ -95,13 +95,23 @@ interface CheckboxesProps {
 }
 const Checkboxes: React.FC<CheckboxesProps> = ({choices}) => {
   const items = choices.map((choice, idx) => {
-    return <div>
+    return <CheckboxItemWrapper>
       <input type="checkbox" />
       <p>{choice}</p>
-    </div>;
+    </CheckboxItemWrapper>;
   });
   return <>{items}</>;
 };
+const CheckboxItemWrapper = styled.div`
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+
+  cursor: pointer;
+  &:hover {
+    background: lightgray;
+  }
+`;
 
 interface RadioButtonProps {
   readonly choices: string[];
@@ -119,6 +129,11 @@ const RadioItemWrapper = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
+
+  cursor: pointer;
+  &:hover {
+    background: lightgray;
+  }
 `;
 
 function useAuth(): string | undefined {
